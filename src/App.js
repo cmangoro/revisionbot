@@ -1,13 +1,16 @@
-import React from 'react';
-import ChatInterface from './components/ChatInterface'; // Ensure this line is correct
-import './App.css';
+import React from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import HomePage from "./components/HomePage";
+import ChatInterface from "./components/ChatInterface";
 
 function App() {
   return (
-    <div className="App">
-      <h1>RevisionBot</h1>
-      <ChatInterface />
-    </div>
+    <Router>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/chat" element={<ChatInterface />} />
+      </Routes>
+    </Router>
   );
 }
 

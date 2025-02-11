@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:5000/api'; // Replace with your backend URL
+const API_BASE_URL = 'http://localhost:5000/api'; //this is the backend url
 
 export const sendMessageToAI = async (message) => {
   try {
