@@ -1,100 +1,196 @@
-import React, { useState, useEffect } from "react";
-import { TextField, Button, Box, Typography, Paper, Input } from "@mui/material";
+import React, { useState, useEffect, useRef } from "react";
+import {
+  TextField,
+  Button,
+  Box,
+  Typography,
+  Paper,
+  CircularProgress,
+  Alert,
+} from "@mui/material";
 import { useLocation } from "react-router-dom";
 import axios from "axios";
-import { PDFDocument } from "pdf-lib";
+import ReactMarkdown from "react-markdown"; // ✅ Markdown rendering
 
 const ChatInterface = () => {
   const location = useLocation();
-  const initialMessage = location.state?.initialMessage || ""; // Gets message from homepage
+  const initialMessage = location.state?.initialMessage || "";
+
   const [message, setMessage] = useState(initialMessage);
   const [chat, setChat] = useState([]);
-  const [file, setFile] = useState(null); // Store the uploaded file
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [selectedModule, setSelectedModule] = useState("");
+
+  const hasSentInitialMessage = useRef(false);
+  const chatBoxRef = useRef(null);
+
+  const formatModuleName = (name) => name.replace(/ /g, "_");
+  const formatDisplayName = (name) => name.replace(/_/g, " ");
 
   useEffect(() => {
-    if (initialMessage) {
-      handleSendMessage(initialMessage);
+    if (initialMessage && !hasSentInitialMessage.current) {
+      startNewSession(initialMessage);
+      hasSentInitialMessage.current = true;
     }
   }, [initialMessage]);
+
+  useEffect(() => {
+    if (chatBoxRef.current) {
+      chatBoxRef.current.scrollTop = chatBoxRef.current.scrollHeight;
+    }
+  }, [chat]);
+
+  const startNewSession = async (moduleName) => {
+    const formattedModule = formatModuleName(moduleName);
+    setSelectedModule(formattedModule);
+    setChat([]);
+    setIsLoading(true);
+    setError("");
+
+    try {
+      const systemMessage = `You are now assisting with ${formattedModule}. Please focus only on this module.`;
+      const response = await axios.post("http://127.0.0.1:5000/query", {
+        query: systemMessage,
+        module: formattedModule,
+      });
+
+      console.log("API Response:", response.data);
+
+      const displayName = formatDisplayName(formattedModule);
+      const updatedResponse =
+        response.data?.response?.replace(formattedModule, displayName) ||
+        "No response";
+
+      setChat([{ role: "bot", text: updatedResponse }]);
+    } catch (error) {
+      console.error("Error starting new session:", error);
+      setError("Failed to start a new session. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSendMessage = async (msg) => {
     if (!msg.trim()) return;
 
-    const userMessage = { role: "user", text: msg };
-    setChat((prev) => [...prev, userMessage]);
+    setIsLoading(true);
+    setError("");
+
+    setChat((prev) => [...prev, { role: "user", text: msg }]);
 
     try {
-      const result = await axios.post("/api/chat", { message: msg });
-      const botMessage = { role: "bot", text: result.data[0]?.generated_text || "No response" };
-      setChat((prev) => [...prev, botMessage]);
+      const response = await axios.post("http://127.0.0.1:5000/query", {
+        query: msg,
+        module: selectedModule,
+      });
+
+      console.log("API Response:", response.data);
+
+      const botResponse = response.data?.response || "No response";
+
+      setChat((prev) => [...prev, { role: "bot", text: botResponse }]);
     } catch (error) {
       console.error("Error communicating with the AI:", error);
+      setError(
+        "Failed to send message. Please check your connection and try again."
+      );
+    } finally {
+      setIsLoading(false);
     }
 
-    setMessage(""); // Clear input after sending the message
-  };
-
-  const handleFileUpload = async (event) => {
-    const file = event.target.files[0];
-    if (file && file.type === "application/pdf") {
-      setFile(file);
-      const content = await extractTextFromPDF(file);
-      handleSendMessage(content); // should the extracted PDF content to the bot
-    }
-  };
-
-  const extractTextFromPDF = async (pdfFile) => {
-    const fileReader = new FileReader();
-    return new Promise((resolve, reject) => {
-      fileReader.onload = async () => {
-        try {
-          const uint8Array = new Uint8Array(fileReader.result);
-          const pdfDoc = await PDFDocument.load(uint8Array);
-          const text = await pdfDoc.getText(); // should extract text from the PDF
-          resolve(text);
-        } catch (error) {
-          reject("Failed to extract text from PDF");
-        }
-      };
-      fileReader.onerror = (error) => reject("Failed to read file");
-      fileReader.readAsArrayBuffer(pdfFile);
-    });
+    setMessage("");
   };
 
   return (
-    <Box sx={{ maxWidth: "600px", margin: "auto", mt: 4, p: 2 }}>
-      <Typography variant="h5" gutterBottom sx={{ color: "#2560b9" }}>
-        Chat with RevisionBot
+    <Box sx={{ maxWidth: "800px", margin: "auto", mt: 4, p: 2 }}>
+      <Typography
+        variant="h4"
+        gutterBottom
+        align="center"
+        sx={{ color: "#2560b9", fontWeight: "bold" }}
+      >
+        BCU RevisionBot
+      </Typography>
+      <Typography
+        variant="subtitle1"
+        align="center"
+        sx={{ color: "#666", mb: 4 }}
+      >
+        Ask questions, upload PDFs, and get instant help with your studies.
       </Typography>
 
-      <Paper sx={{ maxHeight: "300px", overflowY: "auto", p: 2 }}>
+      <Paper
+        ref={chatBoxRef}
+        sx={{
+          height: "400px",
+          overflowY: "auto",
+          p: 2,
+          backgroundColor: "#f5f5f5",
+          borderRadius: 2,
+          mb: 2,
+        }}
+      >
         {chat.map((msg, index) => (
-          <Typography key={index} align={msg.role === "user" ? "right" : "left"}>
-            <strong>{msg.role === "user" ? "You: " : "Bot: "}</strong> {msg.text}
-          </Typography>
+          <Box
+            key={index}
+            sx={{
+              display: "flex",
+              justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
+              mb: 2,
+            }}
+          >
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 2,
+                maxWidth: "75%",
+                backgroundColor:
+                  msg.role === "user" ? "#2196f3" : "#e0e0e0",
+                color: msg.role === "user" ? "white" : "black",
+                wordWrap: "break-word",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              <strong>{msg.role === "user" ? "You: " : "Bot: "}</strong>
+              {msg.role === "bot" ? (
+                <ReactMarkdown>{msg.text}</ReactMarkdown>
+              ) : (
+                msg.text
+              )}
+            </Box>
+          </Box>
         ))}
+        {isLoading && (
+          <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
+            <CircularProgress size={24} />
+          </Box>
+        )}
       </Paper>
 
-      <Box sx={{ display: "flex", mt: 2, gap: 1 }}>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
+      <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
         <TextField
           fullWidth
           variant="outlined"
           placeholder="Ask RevisionBot..."
           value={message}
           onChange={(e) => setMessage(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSendMessage(message)}
+          disabled={isLoading}
         />
-        <Button variant="contained" onClick={() => handleSendMessage(message)}>
+        <Button
+          variant="contained"
+          onClick={() => handleSendMessage(message)}
+          disabled={!message.trim() || isLoading}
+        >
           Send
         </Button>
-      </Box>
-
-      {/* File upload input */}
-      <Box sx={{ mt: 2 }}>
-        <Input
-          type="file"
-          accept="application/pdf"
-          onChange={handleFileUpload}
-        />
       </Box>
     </Box>
   );
